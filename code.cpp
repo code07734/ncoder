@@ -12,8 +12,8 @@ using namespace std;
 namespace fs = filesystem;
 
 struct states{
-	u64 count,iter,iterout;
-	u8 seqBegun,seqStart;
+	u64 iter,iterout,seqAddr;
+	u8 halt,mapF,numSeq,numSeqEnd,offset;
 };
 
 u8 isNum(u8 n){
@@ -54,14 +54,48 @@ void strToNum(u8 *vmem, u8 *out,u64 len,u64 length, states *s){
     
 }
 
-void func(u8 *vmem){
+void ncoder(u8 *vmem, states *s, u64 fileSize){
 	u8 *out;
-	u64 dd,fileSize=0,flag=2,len=0,length=0;
+	u64 dd, len=0, length=0;
+	
+	out = vmem + 0x1000;
+	
+	s->offset=1;
+	while(s->halt^1){
+		dd=vmem[s->iter];
+
+		s->iter==fileSize ? s->halt|=1 : s->halt;
+		dd==0x3a ? s->mapF^=1 : s->mapF;
+
+		s->mapF ? s->numSeq|=isNum(dd) : s->numSeq;
+		s->numSeq ? s->numSeqEnd=isNum(dd)^1 : s->numSeqEnd;
+
+		if(s->mapF&s->numSeqEnd){
+			length=((len+1)>>1);
+
+			out[s->iterout]=length;
+			s->iterout+=1;
+
+			if(len>0){
+				strToNum(vmem,out,len,length,s);
+			}
+			
+			s->numSeq=0;
+			s->numSeqEnd=0;
+			len=0;
+		}
+
+		len+=s->numSeq;
+
+		s->iter+=s->offset;
+	}
+}
+
+void init(u8 *vmem){
+	u64 fileSize=0;
 	states *s;
 
-	vmem = new u8[0x5000]();
-	out = vmem + 0x1000;
-	s = new states[1]();
+	s = (states*)(vmem + 0x2000);
 
 	ifstream inFile("f0", ios::binary);
 	ofstream outFile("f1", ios::binary);
@@ -71,45 +105,9 @@ void func(u8 *vmem){
 
 	inFile.read((i8*)vmem,fileSize);
 
-	while(s->count<fileSize){
-		dd=vmem[s->iter];
+	ncoder(vmem,s,fileSize);
 
-		s->iter==fileSize ? flag|=1 : flag;
-		dd==0x3a ? flag^=1<<8 : flag;
-
-		if(flag&1){
-			s->count=fileSize;
-		}
-
-		if((flag>>8)&1){
-
-			if(isNum(dd)){
-				s->seqBegun=isNum(dd);
-				s->seqStart=s->iter;
-			}
-
-			if((s->seqBegun^isNum(dd))&s->seqBegun){
-				length=((len+1)>>1);
-			
-				out[s->iterout]=length;
-    			s->iterout+=1;
-
-				if(len>0){
-					strToNum(vmem,out,len,length,s);
-				}
-				
-				len=0;
-				s->seqBegun=0;
-				s->count=s->iter;
-			}
-		
-			len+=s->seqBegun;
-		}
-
-		s->iter+=(flag>>1)&1;
-	}
-
-	outFile.write((i8*)out,s->iterout);
+	outFile.write((i8*)vmem+0x1000,s->iterout);
 	dumpFile.write((i8*)vmem+0x2000,0x100);
 
 	inFile.close();
@@ -121,10 +119,10 @@ int main(){
 	u8 *vmem;
 	u64 *vmem64, i=0;
 
-	vmem = new u8[0x10000]();
-	vmem64 = (u64*)vmem;
+	//vmem = new u8[0x10000]();
+	//vmem64 = (u64*)vmem;
 	
-	func(vmem);
+	init(vmem);
 
 	delete [] vmem;
 	return 0;
